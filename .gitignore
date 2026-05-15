@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+.pytest_cache/
+
+input/*.xlsx
+input/*.xls
+input/*.xlsm
+output/*.xlsx
+output/*.xls
+output/*.xlsm
+
+!input/.gitkeep
+!output/.gitkeep

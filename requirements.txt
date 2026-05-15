@@ -1,0 +1,7 @@
+openai-agents[litellm]
+fastapi
+uvicorn[standard]
+pandas
+openpyxl
+python-dotenv
+python-multipart

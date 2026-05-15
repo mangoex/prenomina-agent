@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mapa interactivo | Prenomina Agent</title>
+  <style>
+    :root {
+      --ink: #17202a;
+      --muted: #667085;
+      --paper: #f7f8fb;
+      --panel: #ffffff;
+      --line: #d7dce5;
+      --navy: #17324d;
+      --teal: #047481;
+      --green: #25855a;
+      --amber: #b46a13;
+      --red: #b42318;
+      --violet: #6b4bb8;
+      --shadow: 0 18px 45px rgba(23, 32, 42, .10);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.45;
+    }
+
+    header {
+      background: #102234;
+      color: #fff;
+      padding: 28px clamp(18px, 4vw, 48px) 24px;
+      border-bottom: 5px solid #e6a23c;
+    }
+
+    .eyebrow {
+      color: #b6e1e6;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      margin: 0 0 8px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 5vw, 52px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 960px;
+      margin: 14px 0 0;
+      color: #d9e8ef;
+      font-size: clamp(15px, 2vw, 18px);
+    }
+
+    main {
+      width: min(1180px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 22px 0 48px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: -34px 0 20px;
+    }
+
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 15px;
+      box-shadow: var(--shadow);
+      min-height: 104px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 23px;
+      line-height: 1.1;
+      color: var(--navy);
+      margin-bottom: 6px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 18px 0;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 10px 13px;
+      font-weight: 750;
+      cursor: pointer;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      border-color: #9aa7b8;
+    }
+
+    button.active {
+      color: #fff;
+      background: var(--teal);
+      border-color: var(--teal);
+    }
+
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: clamp(16px, 3vw, 26px);
+      box-shadow: var(--shadow);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(20px, 3vw, 30px);
+      letter-spacing: 0;
+    }
+
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: 1.4fr .9fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .graph {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(122px, 1fr));
+      gap: 12px;
+      position: relative;
+    }
+
+    .node {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 14px;
+      min-height: 120px;
+      cursor: pointer;
+      position: relative;
+      transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+    }
+
+    .node:hover, .node.selected {
+      transform: translateY(-2px);
+      border-color: var(--teal);
+      box-shadow: 0 14px 26px rgba(4, 116, 129, .15);
+    }
+
+    .node small {
+      display: inline-block;
+      color: #fff;
+      background: var(--navy);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      margin-bottom: 10px;
+    }
+
+    .node h3 {
+      margin: 0 0 6px;
+      font-size: 16px;
+    }
+
+    .node p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .node[data-kind="api"] small { background: var(--teal); }
+    .node[data-kind="agent"] small { background: var(--violet); }
+    .node[data-kind="tool"] small { background: var(--green); }
+    .node[data-kind="file"] small { background: var(--amber); }
+    .node[data-kind="risk"] small { background: var(--red); }
+
+    .detail {
+      border-left: 5px solid var(--teal);
+      background: #f9fbfc;
+      border-radius: 8px;
+      padding: 18px;
+      min-height: 260px;
+    }
+
+    .detail h3 {
+      margin: 0 0 8px;
+      font-size: 22px;
+    }
+
+    .detail ul, .compact-list {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .path {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: #eef2f7;
+      color: #344054;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+      margin-top: 10px;
+      word-break: break-word;
+    }
+
+    .flow-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 10px;
+      counter-reset: step;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 42px 1fr auto;
+      gap: 12px;
+      align-items: start;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--navy);
+      border-radius: 50%;
+      font-weight: 800;
+    }
+
+    .step h3 {
+      margin: 0 0 5px;
+      font-size: 16px;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .badge {
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 800;
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    .ok { background: var(--green); }
+    .warn { background: var(--amber); }
+    .stop { background: var(--red); }
+    .info { background: var(--teal); }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .mini {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .mini h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    .mini p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th, td {
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      background: #102234;
+      color: #fff;
+      font-size: 13px;
+    }
+
+    td code {
+      background: #eef2f7;
+      border-radius: 4px;
+      padding: 2px 5px;
+    }
+
+    .search-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    input[type="search"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 12px;
+      font-size: 15px;
+    }
+
+    .schema-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: #344054;
+      font-size: 13px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .callout {
+      background: #fff8eb;
+      border: 1px solid #f1c27a;
+      border-radius: 8px;
+      padding: 14px;
+      color: #65410d;
+      margin-top: 14px;
+    }
+
+    .diagram {
+      width: 100%;
+      min-height: 230px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow-x: auto;
+      padding: 18px;
+    }
+
+    svg text {
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      font-size: 13px;
+      fill: #17202a;
+    }
+
+    @media (max-width: 920px) {
+      .stats, .architecture, .grid-2, .matrix { grid-template-columns: 1fr; }
+      .graph { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .step { grid-template-columns: 34px 1fr; }
+      .step .badge { grid-column: 2; width: fit-content; }
+    }
+
+    @media (max-width: 540px) {
+      main { width: min(100% - 20px, 1180px); }
+      .graph { grid-template-columns: 1fr; }
+      .section-title { display: block; }
+      button { width: 100%; }
+      .tabs, .flow-controls { display: grid; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="eyebrow">Humanio · Potenciando Humanos</p>
+    <h1>Prenomina Agent</h1>
+    <p class="subtitle">Mapa vivo del MVP: una API recibe un Excel, un agente fuerza el uso de una herramienta y Python calcula la prenomina con reglas deterministicas.</p>
+  </header>
+
+  <main>
+    <section class="stats" aria-label="Resumen del sistema">
+      <article class="stat">
+        <strong>FastAPI</strong>
+        <span>Puerta de entrada para salud y procesamiento: <code>/health</code> y <code>/procesar-prenomina</code>.</span>
+      </article>
+      <article class="stat">
+        <strong>1 agente</strong>
+        <span><code>Agente de Prenomina</code> usa OpenAI Agents SDK, pero no calcula importes.</span>
+      </article>
+      <article class="stat">
+        <strong>1 tool</strong>
+        <span><code>calcular_prenomina_excel</code> concentra validacion, calculo y archivo final.</span>
+      </article>
+      <article class="stat">
+        <strong>0 DB</strong>
+        <span>No hay Postgres, SQLite ni ORM. La persistencia real son archivos Excel.</span>
+      </article>
+    </section>
+
+    <nav class="tabs" aria-label="Vistas">
+      <button class="active" data-view="mapa">Mapa</button>
+      <button data-view="flujo">Flujo</button>
+      <button data-view="componentes">Componentes</button>
+      <button data-view="datos">Datos</button>
+    </nav>
+
+    <section id="mapa" class="view active panel">
+      <div class="section-title">
+        <h2>Arquitectura general</h2>
+        <p class="hint">Haz clic en cada bloque para ver su responsabilidad.</p>
+      </div>
+      <div class="diagram" aria-label="Diagrama de flujo">
+        <svg width="920" height="220" viewBox="0 0 920 220" role="img">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#667085"></path>
+            </marker>
+          </defs>
+          <rect x="10" y="38" width="140" height="72" rx="8" fill="#eef7f8" stroke="#047481"></rect>
+          <text x="80" y="68" text-anchor="middle" font-weight="700">Usuario / n8n</text>
+          <text x="80" y="90" text-anchor="middle">sube Excel</text>
+          <line x1="150" y1="74" x2="230" y2="74" stroke="#667085" stroke-width="2" marker-end="url(#arrow)"></line>
+
+          <rect x="230" y="38" width="140" height="72" rx="8" fill="#eef2f7" stroke="#17324d"></rect>
+          <text x="300" y="68" text-anchor="middle" font-weight="700">FastAPI</text>
+          <text x="300" y="90" text-anchor="middle">valida y guarda</text>
+          <line x1="370" y1="74" x2="450" y2="74" stroke="#667085" stroke-width="2" marker-end="url(#arrow)"></line>
+
+          <rect x="450" y="38" width="140" height="72" rx="8" fill="#f3effc" stroke="#6b4bb8"></rect>
+          <text x="520" y="68" text-anchor="middle" font-weight="700">Agente</text>
+          <text x="520" y="90" text-anchor="middle">elige tool</text>
+          <line x1="590" y1="74" x2="670" y2="74" stroke="#667085" stroke-width="2" marker-end="url(#arrow)"></line>
+
+          <rect x="670" y="38" width="140" height="72" rx="8" fill="#eef8f1" stroke="#25855a"></rect>
+          <text x="740" y="68" text-anchor="middle" font-weight="700">Python tool</text>
+          <text x="740" y="90" text-anchor="middle">calcula</text>
+
+          <line x1="740" y1="110" x2="740" y2="152" stroke="#667085" stroke-width="2" marker-end="url(#arrow)"></line>
+          <rect x="642" y="152" width="196" height="52" rx="8" fill="#fff8eb" stroke="#b46a13"></rect>
+          <text x="740" y="176" text-anchor="middle" font-weight="700">output/prenomina_resultado.xlsx</text>
+          <text x="740" y="195" text-anchor="middle">Base, Prenomina, Inconsistencias, Resumen</text>
+
+          <path d="M 300 110 C 300 156, 434 156, 642 176" fill="none" stroke="#667085" stroke-dasharray="6 5" stroke-width="2"></path>
+          <text x="410" y="154" text-anchor="middle" fill="#667085">respuesta JSON</text>
+        </svg>
+      </div>
+      <div class="architecture" style="margin-top:18px;">
+        <div class="graph" id="nodeGrid"></div>
+        <aside class="detail" id="nodeDetail" aria-live="polite"></aside>
+      </div>
+    </section>
+
+    <section id="flujo" class="view panel">
+      <div class="section-title">
+        <h2>Flujo de ejecucion</h2>
+        <p class="hint">Filtra entre camino normal, advertencias y bloqueo por errores criticos.</p>
+      </div>
+      <div class="flow-controls">
+        <button class="active" data-filter="all">Todo</button>
+        <button data-filter="ok">Camino correcto</button>
+        <button data-filter="warn">Advertencias</button>
+        <button data-filter="stop">Errores criticos</button>
+      </div>
+      <div class="timeline" id="timeline"></div>
+    </section>
+
+    <section id="componentes" class="view panel">
+      <div class="section-title">
+        <h2>Componentes y herramientas</h2>
+        <p class="hint">La IA coordina; la logica sensible vive en Python.</p>
+      </div>
+      <div class="grid-2">
+        <article class="mini">
+          <h3>API</h3>
+          <p><code>app/main.py</code> crea la aplicacion FastAPI, valida extension Excel, guarda el archivo temporal, llama al agente y devuelve una respuesta Pydantic.</p>
+          <span class="path">POST /procesar-prenomina</span>
+        </article>
+        <article class="mini">
+          <h3>Agente</h3>
+          <p><code>app/agent.py</code> construye el agente con instrucciones estrictas y <code>tool_choice</code> para usar la herramienta de prenomina.</p>
+          <span class="path">Runner.run(..., max_turns=3)</span>
+        </article>
+        <article class="mini">
+          <h3>Tool principal</h3>
+          <p><code>app/tools_prenomina.py</code> lee Excel, detecta encabezado, normaliza columnas, valida datos, agrupa por empleado y escribe el resultado.</p>
+          <span class="path">calcular_prenomina_excel</span>
+        </article>
+        <article class="mini">
+          <h3>Contrato de salida</h3>
+          <p><code>app/schemas.py</code> define el JSON de respuesta: ok, mensaje, archivo, empleados procesados, total e inconsistencias.</p>
+          <span class="path">ProcesarPrenominaResponse</span>
+        </article>
+      </div>
+
+      <div class="callout">
+        <strong>Punto clave:</strong> el modelo no debe inventar calculos. El diseno actual obliga a que los numeros salgan de pandas/openpyxl, no de una respuesta generativa.
+      </div>
+    </section>
+
+    <section id="datos" class="view panel">
+      <div class="section-title">
+        <h2>Datos, reglas y almacenamiento</h2>
+        <p class="hint">Busca columnas o conceptos para ubicar donde viven.</p>
+      </div>
+      <div class="search-row">
+        <input id="schemaSearch" type="search" placeholder="Buscar: bono, descuento, fecha, output, base de datos...">
+      </div>
+      <div class="matrix" id="dataCards"></div>
+
+      <h2 style="margin-top:24px;">Columnas canonicas</h2>
+      <div class="schema-list" id="schemaPills"></div>
+
+      <h2 style="margin-top:24px;">Hojas generadas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Hoja</th>
+            <th>Contenido</th>
+            <th>Uso operativo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Base original</code></td>
+            <td>Copia de la primera hoja del Excel recibido.</td>
+            <td>Trazabilidad: permite ver de donde salio el calculo.</td>
+          </tr>
+          <tr>
+            <td><code>Prenomina</code></td>
+            <td>Resumen por empleado con horas, sueldo, bonos, descuentos, subtotal y total.</td>
+            <td>Salida principal para revision o carga posterior.</td>
+          </tr>
+          <tr>
+            <td><code>Inconsistencias</code></td>
+            <td>Lista de criticos y advertencias con fila, columna y mensaje.</td>
+            <td>Correccion de datos antes de liberar prenomina.</td>
+          </tr>
+          <tr>
+            <td><code>Resumen</code></td>
+            <td>Estado general, empleados procesados, total, errores y advertencias.</td>
+            <td>Lectura ejecutiva del resultado.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const nodes = [
+      {
+        id: "cliente",
+        kind: "api",
+        label: "Entrada",
+        title: "Usuario, n8n o sistema externo",
+        text: "Envia un Excel por multipart/form-data con el campo file.",
+        path: "POST /procesar-prenomina",
+        bullets: ["Acepta .xlsx, .xlsm y .xls.", "Pensado para que n8n lo llame despues.", "Tambien expone GET /health para monitoreo."]
+      },
+      {
+        id: "main",
+        kind: "api",
+        label: "API",
+        title: "FastAPI",
+        text: "Guarda una copia temporal del archivo, llama al agente y limpia el temporal al final.",
+        path: "app/main.py",
+        bullets: ["Usa uuid para nombrar el archivo temporal.", "Escribe en input/ y output/.", "Convierte excepciones en errores HTTP."]
+      },
+      {
+        id: "agent",
+        kind: "agent",
+        label: "Agente",
+        title: "Agente de Prenomina",
+        text: "Capa de orquestacion: no calcula, solo fuerza el uso de la herramienta.",
+        path: "app/agent.py",
+        bullets: ["Requiere OPENAI_API_KEY.", "OPENAI_MODEL es opcional.", "Usa stop_on_first_tool y max_turns=3."]
+      },
+      {
+        id: "tool",
+        kind: "tool",
+        label: "Tool",
+        title: "calcular_prenomina_excel",
+        text: "Funcion expuesta al agente con function_tool. Es el motor real del negocio.",
+        path: "app/tools_prenomina.py",
+        bullets: ["Lee Excel con pandas.", "Genera Excel con openpyxl.", "Valida columnas, fechas, numeros y duplicados."]
+      },
+      {
+        id: "db",
+        kind: "file",
+        label: "Datos",
+        title: "Sin base de datos tradicional",
+        text: "No hay tablas, migraciones ni conexion persistente. Los archivos son la fuente y salida.",
+        path: "input/ + output/",
+        bullets: ["input/ guarda temporalmente el archivo recibido.", "output/prenomina_resultado.xlsx es el reporte final.", ".env solo guarda configuracion."]
+      },
+      {
+        id: "risk",
+        kind: "risk",
+        label: "Riesgo",
+        title: "Datos reales de nomina",
+        text: "El MVP ya maneja informacion sensible; necesita controles antes de produccion.",
+        path: ".gitignore + despliegue",
+        bullets: ["No subir .env ni archivos reales.", "Agregar autenticacion al endpoint.", "Evitar que multiples usuarios pisen el mismo output."]
+      }
+    ];
+
+    const steps = [
+      ["ok", "Carga del Excel", "El usuario o n8n envia un archivo al endpoint. FastAPI revisa que parezca Excel."],
+      ["ok", "Archivo temporal", "La API crea input/ si hace falta y guarda el Excel con un nombre unico basado en uuid."],
+      ["ok", "Llamada al agente", "ejecutar_agente_prenomina arma un prompt con input_path y output_path."],
+      ["ok", "Tool obligatoria", "El agente se crea con tool_choice para llamar calcular_prenomina_excel."],
+      ["ok", "Lectura inteligente", "La tool detecta la fila de encabezados, normaliza nombres y reconoce alias como Cod. o Nombre completo."],
+      ["warn", "Advertencias", "Si bono o descuento estan vacios, se registran advertencias y se toman como cero."],
+      ["stop", "Errores criticos", "Si faltan columnas, hay fechas invalidas, negativos o duplicados empleado+fecha, no calcula total final."],
+      ["ok", "Calculo", "Agrupa por empleado y calcula total_horas, subtotal, bonos, descuentos y total_pagar."],
+      ["ok", "Reporte Excel", "Escribe Base original, Prenomina, Inconsistencias y Resumen en output/prenomina_resultado.xlsx."],
+      ["ok", "Respuesta JSON", "La API devuelve ok, mensaje, archivo_generado, empleados_procesados, total_prenomina e inconsistencias."]
+    ];
+
+    const dataCards = [
+      ["Base de datos", "No existe DB tradicional", "No hay Postgres, SQLite, Mongo, Redis, Prisma, Drizzle ni SQLAlchemy configurados."],
+      ["Entrada", "Excel de asistencia/incidencias", "La primera hoja del archivo se usa como base. La tool detecta encabezados hasta en las primeras 20 filas."],
+      ["Salida", "Excel operativo", "El resultado final queda en output/prenomina_resultado.xlsx con cuatro hojas."],
+      ["Configuracion", ".env", "OPENAI_API_KEY es obligatoria para correr el agente. OPENAI_MODEL es opcional."],
+      ["Regla", "Total por empleado", "subtotal = total_horas * sueldo_hora; total_pagar = subtotal + bonos - descuentos."],
+      ["Bloqueo", "Errores criticos", "Si hay problemas estructurales o datos invalidos, genera inconsistencias pero no total final."]
+    ];
+
+    const columns = ["empleado_id", "nombre", "fecha", "horas_trabajadas", "sueldo_hora", "bono", "descuento"];
+
+    const nodeGrid = document.getElementById("nodeGrid");
+    const nodeDetail = document.getElementById("nodeDetail");
+    const timeline = document.getElementById("timeline");
+    const dataCardsEl = document.getElementById("dataCards");
+    const schemaPills = document.getElementById("schemaPills");
+
+    function renderNodes(selectedId = nodes[0].id) {
+      nodeGrid.innerHTML = nodes.map(node => `
+        <article class="node ${node.id === selectedId ? "selected" : ""}" data-id="${node.id}" data-kind="${node.kind}">
+          <small>${node.label}</small>
+          <h3>${node.title}</h3>
+          <p>${node.text}</p>
+        </article>
+      `).join("");
+      showNode(selectedId);
+    }
+
+    function showNode(id) {
+      const node = nodes.find(item => item.id === id) || nodes[0];
+      document.querySelectorAll(".node").forEach(item => item.classList.toggle("selected", item.dataset.id === id));
+      nodeDetail.innerHTML = `
+        <h3>${node.title}</h3>
+        <p>${node.text}</p>
+        <span class="path">${node.path}</span>
+        <ul>${node.bullets.map(item => `<li>${item}</li>`).join("")}</ul>
+      `;
+    }
+
+    function renderTimeline(filter = "all") {
+      const visible = steps.filter(step => filter === "all" || step[0] === filter);
+      timeline.innerHTML = visible.map(step => `
+        <article class="step">
+          <div>
+            <h3>${step[1]}</h3>
+            <p>${step[2]}</p>
+          </div>
+          <span class="badge ${step[0]}">${step[0] === "ok" ? "normal" : step[0] === "warn" ? "advertencia" : "critico"}</span>
+        </article>
+      `).join("");
+    }
+
+    function renderDataCards(query = "") {
+      const q = query.trim().toLowerCase();
+      const filtered = dataCards.filter(card => card.join(" ").toLowerCase().includes(q));
+      dataCardsEl.innerHTML = filtered.map(card => `
+        <article class="mini">
+          <h3>${card[0]}</h3>
+          <p><strong>${card[1]}</strong></p>
+          <p>${card[2]}</p>
+        </article>
+      `).join("") || `<p class="hint">Sin coincidencias.</p>`;
+    }
+
+    function renderPills() {
+      schemaPills.innerHTML = columns.map(col => `<span class="pill">${col}</span>`).join("");
+    }
+
+    document.querySelectorAll(".tabs button").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".tabs button").forEach(item => item.classList.remove("active"));
+        document.querySelectorAll(".view").forEach(item => item.classList.remove("active"));
+        button.classList.add("active");
+        document.getElementById(button.dataset.view).classList.add("active");
+      });
+    });
+
+    document.addEventListener("click", event => {
+      const node = event.target.closest(".node");
+      if (node) showNode(node.dataset.id);
+    });
+
+    document.querySelectorAll(".flow-controls button").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".flow-controls button").forEach(item => item.classList.remove("active"));
+        button.classList.add("active");
+        renderTimeline(button.dataset.filter);
+      });
+    });
+
+    document.getElementById("schemaSearch").addEventListener("input", event => {
+      renderDataCards(event.target.value);
+    });
+
+    renderNodes();
+    renderTimeline();
+    renderDataCards();
+    renderPills();
+  </script>
+</body>
+</html>
