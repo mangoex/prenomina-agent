@@ -124,6 +124,26 @@ OpenRouter se usa a traves de LiteLLM con el extra `openai-agents[litellm]`.
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+## Pantalla web para usuario final
+
+La ruta `/` abre una pantalla web simple para usuarios no tecnicos:
+
+- Subir archivo Excel.
+- Validar `UMA_DIARIA`, factor de fondo de ahorro y modo de tope.
+- Generar la prenomina con el motor deterministico.
+- Revisar resumen y advertencias.
+- Descargar el Excel generado.
+
+La pantalla web ejecuta el motor deterministico directamente para evitar que el usuario tenga que manejar llaves o headers. El endpoint `/procesar-prenomina` se mantiene separado para integraciones y sigue usando OpenAI Agents SDK con el proveedor configurado, incluyendo OpenRouter.
+
+La pantalla web no requiere que el usuario capture `X-API-Key`. Para protegerla en Railway, configura:
+
+```env
+WEB_ACCESS_KEY=una_clave_para_el_formulario
+```
+
+Si `WEB_ACCESS_KEY` esta definida, el formulario pedira esa clave y tambien la validara al descargar el archivo. Si no esta definida, la pantalla queda abierta.
+
 Prueba salud:
 
 ```bash
@@ -171,6 +191,7 @@ curl -L "https://tu-app.railway.app/descargar/prenomina_resultado_<id>.xlsx" ^
    - OpenRouter: `MODEL_PROVIDER=openrouter`, `OPENROUTER_API_KEY` y `OPENROUTER_MODEL`.
 4. Configura tambien:
    - `PRENOMINA_API_KEY`: llave privada para proteger la API.
+   - `WEB_ACCESS_KEY`: llave opcional para proteger la pantalla web.
    - `MAX_UPLOAD_MB`: limite maximo de archivo, por ejemplo `25`.
 5. Railway usara el `Procfile`:
 
