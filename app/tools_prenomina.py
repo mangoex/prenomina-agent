@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 import unicodedata
 from pathlib import Path
@@ -21,6 +22,13 @@ except ImportError:  # Allows deterministic local tests before installing openai
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "output" / "prenomina_resultado.xlsx"
+DEFAULT_FONDO_AHORRO_FACTOR = 0.11
+DEFAULT_UMA_DIARIA = 117.31
+DEFAULT_FONDO_AHORRO_TOPE_MODE = "mensual"
+DEFAULT_USE_EXCEL_FONDO_AHORRO = True
+DEFAULT_DIAS_BASE_PERIODO = 30.4
+DEFAULT_DIAS_MES = 30.4
+FONDO_AHORRO_TOPE_MODES = {"none", "mensual", "quincenal", "proporcional"}
 
 REQUIRED_CALC_COLUMNS = [
     "empleado_id",
@@ -114,8 +122,13 @@ ADMIN_BASE_ALIASES = {
     "deude de carro": "deuda_carro",
     "sueldo bruto mensual": "sueldo_bruto_mensual",
     "sueldo bruto quincenal": "sueldo_bruto_quincenal",
+    "sueldo bruto mensual final": "sueldo_bruto_mensual_final",
+    "sueldo bruto quincenal final": "sueldo_bruto_quincenal_final",
     "porcentaje": "porcentaje",
     "descuento": "descuento",
+    "dias trabajados": "dias_trabajados",
+    "dias trabajados quincena": "dias_trabajados",
+    "dias del mes": "dias_mes",
     "observaciones": "observaciones",
     "descuento empleados s quincenal": "descuento_empleados_quincenal",
     "descuento empleados s mensual": "descuento_empleados_mensual",
@@ -130,6 +143,130 @@ def _normalize_text(value: Any) -> str:
     text = re.sub(r"[\(\)\[\]\.:;,_/-]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return float(value)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    normalized = _normalize_text(value)
+    if normalized in {"1", "true", "yes", "si"}:
+        return True
+    if normalized in {"0", "false", "no"}:
+        return False
+    return default
+
+
+def _normalize_yes_no(value: Any) -> bool:
+    normalized = _normalize_text(value)
+    if normalized in {"si", "yes", "true", "1"}:
+        return True
+    if normalized in {"", "no", "false", "0"}:
+        return False
+    return False
+
+
+def _calculate_fondo_ahorro_cap(
+    *,
+    uma_diaria: float,
+    tope_mode: str,
+    dias_mes: float | None = None,
+    dias_trabajados: float | None = None,
+) -> dict[str, Any]:
+    normalized_mode = _normalize_text(tope_mode) or DEFAULT_FONDO_AHORRO_TOPE_MODE
+    if normalized_mode not in FONDO_AHORRO_TOPE_MODES:
+        normalized_mode = DEFAULT_FONDO_AHORRO_TOPE_MODE
+
+    monthly_cap = 1.3 * uma_diaria * 365 / 12
+    warning = ""
+    if normalized_mode == "none":
+        cap = None
+    elif normalized_mode == "mensual":
+        cap = monthly_cap
+    elif normalized_mode == "quincenal":
+        cap = 1.3 * uma_diaria * 365 / 24
+    else:
+        if dias_mes and dias_mes > 0 and dias_trabajados and dias_trabajados > 0:
+            cap = (monthly_cap / dias_mes) * dias_trabajados
+        else:
+            cap = monthly_cap
+            normalized_mode = "mensual"
+            warning = (
+                "No hay dias_mes o dias_trabajados confiables para tope proporcional; "
+                "se uso tope mensual como fallback."
+            )
+
+    return {
+        "tope": round(cap, 2) if cap is not None else None,
+        "tope_mode_usado": normalized_mode,
+        "advertencia": warning,
+    }
+
+
+def _calculate_fondo_ahorro(
+    *,
+    cuenta_fondo_ahorro: Any,
+    sueldo_nominal: float,
+    salario_diario: float | None = None,
+    dias_trabajados: float | None = None,
+    dias_mes: float | None = None,
+    fondo_ahorro_excel: float = 0.0,
+    factor: float = DEFAULT_FONDO_AHORRO_FACTOR,
+    uma_diaria: float = DEFAULT_UMA_DIARIA,
+    tope_mode: str = DEFAULT_FONDO_AHORRO_TOPE_MODE,
+) -> dict[str, Any]:
+    del salario_diario  # Reserved for future client-validated variants.
+    usa_fondo_ahorro = _normalize_yes_no(cuenta_fondo_ahorro)
+    base_calc = sueldo_nominal * factor if usa_fondo_ahorro else 0.0
+    cap_result = _calculate_fondo_ahorro_cap(
+        uma_diaria=uma_diaria,
+        tope_mode=tope_mode,
+        dias_mes=dias_mes,
+        dias_trabajados=dias_trabajados,
+    )
+    cap = cap_result["tope"]
+    fondo_calc = base_calc if cap is None else min(base_calc, cap)
+    diferencia = fondo_calc - fondo_ahorro_excel
+    requiere_validacion = abs(diferencia) > 0.03 or bool(cap_result["advertencia"])
+
+    if requiere_validacion:
+        mensaje = (
+            "Fondo de ahorro requiere validacion contra el criterio parametrizado. "
+            f"Excel={round(fondo_ahorro_excel, 2)}, Calculado={round(fondo_calc, 2)}, "
+            f"Diferencia={round(diferencia, 2)}, Factor={factor}, UMA={uma_diaria}, "
+            f"TopeMode={cap_result['tope_mode_usado']}."
+        )
+        if cap_result["advertencia"]:
+            mensaje += f" {cap_result['advertencia']}"
+    else:
+        mensaje = (
+            "Fondo de ahorro coincide con el criterio parametrizado dentro de la tolerancia."
+        )
+
+    return {
+        "fondo_ahorro_excel": round(fondo_ahorro_excel, 2),
+        "fondo_ahorro_base_calc": round(base_calc, 2),
+        "fondo_ahorro_tope_calc": cap,
+        "fondo_ahorro_calc": round(fondo_calc, 2),
+        "fondo_ahorro_diferencia": round(diferencia, 2),
+        "fondo_ahorro_factor": factor,
+        "uma_diaria": uma_diaria,
+        "fondo_ahorro_tope_mode": cap_result["tope_mode_usado"],
+        "usa_fondo_ahorro": usa_fondo_ahorro,
+        "requiere_validacion": requiere_validacion,
+        "mensaje_validacion": mensaje,
+    }
+
+
+def _calculate_sdi(salario_diario: float, factor_integracion_imss: float) -> float:
+    return salario_diario * factor_integracion_imss
 
 
 def _make_unique_columns(columns: list[Any]) -> list[str]:
@@ -456,6 +593,89 @@ def _format_identifier(value: Any, fallback: str) -> str:
     return str(value).strip()
 
 
+def _has_external_reference(formula: Any) -> bool:
+    if _is_blank(formula):
+        return False
+    normalized = _normalize_text(formula)
+    text = str(formula)
+    return any(
+        marker in text or marker in normalized
+        for marker in ["[", "]", ".xlsx", "UMA Y SMG", "uma y smg"]
+    )
+
+
+def _load_admin_prenomina_config(issues: list[dict[str, Any]]) -> dict[str, Any]:
+    use_excel_fondo_ahorro = _env_bool(
+        "USE_EXCEL_FONDO_AHORRO", DEFAULT_USE_EXCEL_FONDO_AHORRO
+    )
+    config: dict[str, Any] = {
+        "use_excel_fondo_ahorro": use_excel_fondo_ahorro,
+        "fondo_ahorro_factor": DEFAULT_FONDO_AHORRO_FACTOR,
+        "uma_diaria": DEFAULT_UMA_DIARIA,
+        "fondo_ahorro_tope_mode": _normalize_text(
+            os.getenv("FONDO_AHORRO_TOPE_MODE", DEFAULT_FONDO_AHORRO_TOPE_MODE)
+        )
+        or DEFAULT_FONDO_AHORRO_TOPE_MODE,
+        "dias_base_periodo": DEFAULT_DIAS_BASE_PERIODO,
+        "dias_mes": DEFAULT_DIAS_MES,
+    }
+
+    for env_name, config_key, default in [
+        ("FONDO_AHORRO_FACTOR", "fondo_ahorro_factor", DEFAULT_FONDO_AHORRO_FACTOR),
+        ("UMA_DIARIA", "uma_diaria", DEFAULT_UMA_DIARIA),
+        ("DIAS_BASE_PERIODO", "dias_base_periodo", DEFAULT_DIAS_BASE_PERIODO),
+        ("DIAS_MES", "dias_mes", DEFAULT_DIAS_MES),
+    ]:
+        try:
+            config[config_key] = _env_float(env_name, default)
+        except ValueError:
+            severity = "critico" if not use_excel_fondo_ahorro else "advertencia"
+            _add_issue(
+                issues,
+                severity,
+                "variable_entorno_invalida",
+                f"{env_name} no es numerica; se usa default {default}.",
+                columna=env_name,
+            )
+
+    if config["fondo_ahorro_factor"] <= 0:
+        severity = "critico" if not use_excel_fondo_ahorro else "advertencia"
+        _add_issue(
+            issues,
+            severity,
+            "fondo_ahorro_factor_invalido",
+            "FONDO_AHORRO_FACTOR debe ser mayor a 0.",
+            columna="FONDO_AHORRO_FACTOR",
+        )
+        config["fondo_ahorro_factor"] = DEFAULT_FONDO_AHORRO_FACTOR
+
+    if config["uma_diaria"] <= 0:
+        severity = "critico" if not use_excel_fondo_ahorro else "advertencia"
+        _add_issue(
+            issues,
+            severity,
+            "uma_diaria_invalida",
+            "UMA_DIARIA debe ser mayor a 0.",
+            columna="UMA_DIARIA",
+        )
+        config["uma_diaria"] = DEFAULT_UMA_DIARIA
+
+    if config["fondo_ahorro_tope_mode"] not in FONDO_AHORRO_TOPE_MODES:
+        _add_issue(
+            issues,
+            "advertencia",
+            "fondo_ahorro_tope_mode_invalido",
+            (
+                "FONDO_AHORRO_TOPE_MODE debe ser none, mensual, quincenal o "
+                f"proporcional; se usa {DEFAULT_FONDO_AHORRO_TOPE_MODE}."
+            ),
+            columna="FONDO_AHORRO_TOPE_MODE",
+        )
+        config["fondo_ahorro_tope_mode"] = DEFAULT_FONDO_AHORRO_TOPE_MODE
+
+    return config
+
+
 def procesar_prenomina_administrativa(
     excel_path: Path,
     result_path: Path,
@@ -467,6 +687,7 @@ def procesar_prenomina_administrativa(
     issues: list[dict[str, Any]] = []
     differences: list[dict[str, Any]] = []
     mapping = _build_admin_column_map(base_df)
+    config = _load_admin_prenomina_config(issues)
 
     for column in ADMIN_REQUIRED_COLUMNS:
         if column not in mapping:
@@ -568,7 +789,7 @@ def procesar_prenomina_administrativa(
         puntualidad = _row_number(row, mapping, "puntualidad")
         asistencia = _row_number(row, mapping, "asistencia")
         vales_despensa = _row_number(row, mapping, "vales_despensa")
-        fondo_ahorro = _row_number(row, mapping, "fondo_ahorro")
+        fondo_ahorro_excel = _row_number(row, mapping, "fondo_ahorro")
         honorarios_asimilados = _row_number(row, mapping, "honorarios_asimilados")
         gasolina_sueldo = _row_number(row, mapping, "gasolina_sueldo")
         socio = _row_number(row, mapping, "socio")
@@ -576,9 +797,147 @@ def procesar_prenomina_administrativa(
         facturado = _row_number(row, mapping, "facturado")
         deuda_carro = _row_number(row, mapping, "deuda_carro")
         descuento = _row_number(row, mapping, "descuento")
+        salario_diario = _row_number(row, mapping, "salario_diario")
+        factor_integracion_imss = _row_number(row, mapping, "factor_integracion_imss")
+        salario_diario_integrado_excel = _row_number(row, mapping, "salario_diario_integrado")
+        salario_diario_integrado_calc = _calculate_sdi(
+            salario_diario, factor_integracion_imss
+        )
+        salario_diario_integrado_diferencia = (
+            salario_diario_integrado_calc - salario_diario_integrado_excel
+        )
+        dias_trabajados = (
+            _row_number(row, mapping, "dias_trabajados")
+            if "dias_trabajados" in mapping
+            else None
+        )
+        dias_mes = _row_number(row, mapping, "dias_mes") if "dias_mes" in mapping else config["dias_mes"]
+
+        fondo_formula = None
+        if "fondo_ahorro" in mapping:
+            fondo_cell = worksheet_formula.cell(
+                row=excel_row,
+                column=int(mapping["fondo_ahorro"]["index"]) + 1,
+            )
+            fondo_formula = fondo_cell.value if fondo_cell.data_type == "f" else None
+            if _has_external_reference(fondo_formula):
+                _add_issue(
+                    issues,
+                    "advertencia",
+                    "formula_externa_fondo_ahorro",
+                    (
+                        "La celda de Fondo de ahorro contiene una formula con referencia externa. "
+                        "El sistema no puede leer el archivo externo; sustituye el factor con "
+                        "FONDO_AHORRO_FACTOR y reporta diferencia para validacion."
+                    ),
+                    fila=excel_row,
+                    columna=mapping["fondo_ahorro"]["name"],
+                )
+
+        fondo_ahorro_result = _calculate_fondo_ahorro(
+            cuenta_fondo_ahorro=_admin_sheet_value(
+                worksheet_formula, excel_row, mapping, "cuenta_fondo_ahorro"
+            ),
+            sueldo_nominal=sueldo_nominal,
+            salario_diario=salario_diario,
+            dias_trabajados=dias_trabajados,
+            dias_mes=dias_mes,
+            fondo_ahorro_excel=fondo_ahorro_excel,
+            factor=config["fondo_ahorro_factor"],
+            uma_diaria=config["uma_diaria"],
+            tope_mode=config["fondo_ahorro_tope_mode"],
+        )
+        if abs(fondo_ahorro_result["fondo_ahorro_diferencia"]) > tolerance:
+            differences.append(
+                {
+                    "fila_excel": excel_row,
+                    "empleado_id": empleado_id,
+                    "nombre": nombre,
+                    "concepto": "Fondo de ahorro",
+                    "valor_excel": fondo_ahorro_result["fondo_ahorro_excel"],
+                    "valor_calculado": fondo_ahorro_result["fondo_ahorro_calc"],
+                    "diferencia": fondo_ahorro_result["fondo_ahorro_diferencia"],
+                    "formula_excel": fondo_formula,
+                }
+            )
+            _add_issue(
+                issues,
+                "advertencia",
+                "diferencia_fondo_ahorro",
+                (
+                    "Fondo de ahorro difiere del calculo parametrizado. "
+                    f"Excel={fondo_ahorro_result['fondo_ahorro_excel']}, "
+                    f"Calculado={fondo_ahorro_result['fondo_ahorro_calc']}, "
+                    f"Diferencia={fondo_ahorro_result['fondo_ahorro_diferencia']}, "
+                    f"Factor={fondo_ahorro_result['fondo_ahorro_factor']}, "
+                    f"UMA={fondo_ahorro_result['uma_diaria']}, "
+                    f"TopeMode={fondo_ahorro_result['fondo_ahorro_tope_mode']}. "
+                    "Validar con usuario."
+                ),
+                fila=excel_row,
+                columna=mapping["fondo_ahorro"]["name"],
+            )
+
+        if abs(salario_diario_integrado_diferencia) > tolerance:
+            _add_issue(
+                issues,
+                "advertencia",
+                "diferencia_sdi",
+                (
+                    "Salario diario integrado difiere del calculo salario_diario x "
+                    f"factor_integracion_imss. Excel={round(salario_diario_integrado_excel, 2)}, "
+                    f"Calculado={round(salario_diario_integrado_calc, 2)}, "
+                    f"Diferencia={round(salario_diario_integrado_diferencia, 2)}."
+                ),
+                fila=excel_row,
+                columna=mapping.get("salario_diario_integrado", {}).get("name"),
+            )
+
+        puntualidad_validacion_10_sdi = (
+            salario_diario_integrado_calc * 0.10 * config["dias_base_periodo"]
+        )
+        asistencia_validacion_10_sdi = (
+            salario_diario_integrado_calc * 0.10 * config["dias_base_periodo"]
+        )
+        puntualidad_validacion_diferencia = puntualidad_validacion_10_sdi - puntualidad
+        asistencia_validacion_diferencia = asistencia_validacion_10_sdi - asistencia
+        if (
+            abs(puntualidad_validacion_diferencia) > tolerance
+            or abs(asistencia_validacion_diferencia) > tolerance
+        ):
+            _add_issue(
+                issues,
+                "advertencia",
+                "validacion_puntualidad_asistencia",
+                (
+                    "Validacion exploratoria: puntualidad/asistencia contra 10% de SDI "
+                    f"por DIAS_BASE_PERIODO={config['dias_base_periodo']}. "
+                    f"Puntualidad Excel={round(puntualidad, 2)}, "
+                    f"Calculada={round(puntualidad_validacion_10_sdi, 2)}, "
+                    f"Diferencia={round(puntualidad_validacion_diferencia, 2)}. "
+                    f"Asistencia Excel={round(asistencia, 2)}, "
+                    f"Calculada={round(asistencia_validacion_10_sdi, 2)}, "
+                    f"Diferencia={round(asistencia_validacion_diferencia, 2)}."
+                ),
+                fila=excel_row,
+                columna="PUNTUALIDAD / ASISTENCIA",
+            )
+
+        fondo_ahorro_para_calculo = (
+            fondo_ahorro_excel
+            if config["use_excel_fondo_ahorro"]
+            else fondo_ahorro_result["fondo_ahorro_calc"]
+        )
+        fondo_ahorro_fuente_usada = (
+            "excel" if config["use_excel_fondo_ahorro"] else "calculado"
+        )
 
         percepcion_sueldos_calc = (
-            sueldo_nominal + puntualidad + asistencia + vales_despensa + fondo_ahorro
+            sueldo_nominal
+            + puntualidad
+            + asistencia
+            + vales_despensa
+            + fondo_ahorro_para_calculo
         )
         sueldo_bruto_mensual_calc = (
             percepcion_sueldos_calc
@@ -607,11 +966,39 @@ def procesar_prenomina_administrativa(
             "codigo": codigo,
             "empresa": _admin_sheet_value(worksheet_formula, excel_row, mapping, "empresa"),
             "nombre": nombre,
+            "cuenta_fondo_ahorro": _admin_sheet_value(
+                worksheet_formula, excel_row, mapping, "cuenta_fondo_ahorro"
+            ),
+            "salario_diario": round(salario_diario, 2),
+            "factor_integracion_imss": round(factor_integracion_imss, 6),
+            "salario_diario_integrado_excel": round(salario_diario_integrado_excel, 2),
+            "salario_diario_integrado_calc": round(salario_diario_integrado_calc, 2),
+            "salario_diario_integrado_diferencia": round(
+                salario_diario_integrado_diferencia, 2
+            ),
             "sueldo_nominal": round(sueldo_nominal, 2),
             "puntualidad": round(puntualidad, 2),
+            "puntualidad_validacion_10_sdi": round(puntualidad_validacion_10_sdi, 2),
+            "puntualidad_validacion_diferencia": round(
+                puntualidad_validacion_diferencia, 2
+            ),
             "asistencia": round(asistencia, 2),
+            "asistencia_validacion_10_sdi": round(asistencia_validacion_10_sdi, 2),
+            "asistencia_validacion_diferencia": round(asistencia_validacion_diferencia, 2),
             "vales_despensa": round(vales_despensa, 2),
-            "fondo_ahorro": round(fondo_ahorro, 2),
+            "fondo_ahorro": round(fondo_ahorro_para_calculo, 2),
+            "fondo_ahorro_excel": fondo_ahorro_result["fondo_ahorro_excel"],
+            "fondo_ahorro_base_calc": fondo_ahorro_result["fondo_ahorro_base_calc"],
+            "fondo_ahorro_tope_calc": fondo_ahorro_result["fondo_ahorro_tope_calc"],
+            "fondo_ahorro_calc": fondo_ahorro_result["fondo_ahorro_calc"],
+            "fondo_ahorro_diferencia": fondo_ahorro_result["fondo_ahorro_diferencia"],
+            "fondo_ahorro_factor": fondo_ahorro_result["fondo_ahorro_factor"],
+            "uma_diaria": fondo_ahorro_result["uma_diaria"],
+            "fondo_ahorro_tope_mode": fondo_ahorro_result["fondo_ahorro_tope_mode"],
+            "fondo_ahorro_fuente_usada": fondo_ahorro_fuente_usada,
+            "fondo_ahorro_requiere_validacion": fondo_ahorro_result[
+                "requiere_validacion"
+            ],
             "percepcion_sueldos_calc": round(percepcion_sueldos_calc, 2),
             "honorarios_asimilados": round(honorarios_asimilados, 2),
             "gasolina_sueldo": round(gasolina_sueldo, 2),
@@ -690,22 +1077,52 @@ def procesar_prenomina_administrativa(
     empleados_procesados = int(len(prenomina_df))
     total_prenomina = (
         float(round(prenomina_df["sueldo_bruto_quincenal_final_calc"].sum(), 2))
-        if empleados_procesados
+        if empleados_procesados and "sueldo_bruto_quincenal_final_calc" in prenomina_df
         else 0.0
     )
+
+    def _sum_prenomina_column(column: str) -> float:
+        if column not in prenomina_df:
+            return 0.0
+        return float(round(prenomina_df[column].sum(), 2))
 
     resumen_rows = [
         {"metrica": "tipo_archivo", "valor": "prenomina_administrativa"},
         {"metrica": "ok", "valor": critical_count == 0},
         {"metrica": "empleados_procesados", "valor": empleados_procesados},
         {"metrica": "total_quincenal_final", "valor": total_prenomina},
-        {"metrica": "total_percepcion_sueldos", "valor": round(prenomina_df["percepcion_sueldos_calc"].sum(), 2)},
-        {"metrica": "total_honorarios_asimilados", "valor": round(prenomina_df["honorarios_asimilados"].sum(), 2)},
-        {"metrica": "total_gasolina", "valor": round(prenomina_df["gasolina_sueldo"].sum(), 2)},
-        {"metrica": "total_socio", "valor": round(prenomina_df["socio"].sum(), 2)},
-        {"metrica": "total_efectivo", "valor": round(prenomina_df["efectivo"].sum(), 2)},
-        {"metrica": "total_facturado", "valor": round(prenomina_df["facturado"].sum(), 2)},
-        {"metrica": "total_deuda_carro", "valor": round(prenomina_df["deuda_carro"].sum(), 2)},
+        {"metrica": "total_percepcion_sueldos", "valor": _sum_prenomina_column("percepcion_sueldos_calc")},
+        {"metrica": "total_honorarios_asimilados", "valor": _sum_prenomina_column("honorarios_asimilados")},
+        {"metrica": "total_gasolina", "valor": _sum_prenomina_column("gasolina_sueldo")},
+        {"metrica": "total_socio", "valor": _sum_prenomina_column("socio")},
+        {"metrica": "total_efectivo", "valor": _sum_prenomina_column("efectivo")},
+        {"metrica": "total_facturado", "valor": _sum_prenomina_column("facturado")},
+        {"metrica": "total_deuda_carro", "valor": _sum_prenomina_column("deuda_carro")},
+        {"metrica": "fondo_ahorro_factor", "valor": config["fondo_ahorro_factor"]},
+        {"metrica": "uma_diaria", "valor": config["uma_diaria"]},
+        {"metrica": "fondo_ahorro_tope_mode", "valor": config["fondo_ahorro_tope_mode"]},
+        {"metrica": "use_excel_fondo_ahorro", "valor": config["use_excel_fondo_ahorro"]},
+        {"metrica": "total_fondo_ahorro_excel", "valor": _sum_prenomina_column("fondo_ahorro_excel")},
+        {"metrica": "total_fondo_ahorro_calc", "valor": _sum_prenomina_column("fondo_ahorro_calc")},
+        {"metrica": "total_diferencia_fondo_ahorro", "valor": _sum_prenomina_column("fondo_ahorro_diferencia")},
+        {
+            "metrica": "empleados_con_fondo_ahorro",
+            "valor": int(prenomina_df["fondo_ahorro_calc"].gt(0).sum())
+            if "fondo_ahorro_calc" in prenomina_df
+            else 0,
+        },
+        {
+            "metrica": "empleados_fondo_ahorro_con_diferencia",
+            "valor": int(prenomina_df["fondo_ahorro_diferencia"].abs().gt(tolerance).sum())
+            if "fondo_ahorro_diferencia" in prenomina_df
+            else 0,
+        },
+        {
+            "metrica": "requiere_validacion_fondo_ahorro",
+            "valor": bool(prenomina_df["fondo_ahorro_requiere_validacion"].any())
+            if "fondo_ahorro_requiere_validacion" in prenomina_df
+            else False,
+        },
         {"metrica": "errores_criticos", "valor": critical_count},
         {"metrica": "advertencias", "valor": warning_count},
         {"metrica": "diferencias_con_excel", "valor": len(differences_df)},
