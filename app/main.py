@@ -554,7 +554,7 @@ async def web_procesar_prenomina(
         generated_name = Path(generated_path).name if generated_path else None
         download_url = None
         if generated_name:
-            download_url = str(request.url_for("web_descargar_resultado", filename=generated_name))
+            download_url = f"/web/descargar/{generated_name}"
             if _web_access_enabled():
                 download_url = f"{download_url}?{urlencode({'access_key': access_key})}"
         return _render_web_page(
