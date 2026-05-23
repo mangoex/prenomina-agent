@@ -2,6 +2,37 @@
 
 Este documento describe los criterios actuales del motor de prenomina administrativa. El objetivo es que el calculo sea auditable: el sistema no solo genera importes, tambien muestra que valores uso, que diferencias encontro contra Excel y que criterios siguen pendientes de validacion con el cliente.
 
+## Memoria de conversacion y proyecto
+
+Repositorio del agente: `mangoex/prenomina-agent`.
+
+URL Railway actual: `https://web-production-7b4d.up.railway.app/`.
+
+Decision principal: el agente debe servir dos modos de uso. El modo API se mantiene para n8n/integraciones con `POST /procesar-prenomina` protegido por `X-API-Key`. El modo usuario final vive en `/` y permite subir el Excel, validar UMA/factor/modo de tope, generar la prenomina y descargar el resultado sin que un usuario no tecnico tenga que manejar headers o comandos.
+
+Proveedor de modelo: el proyecto usa OpenRouter en produccion, no OpenAI directo. `OPENROUTER_API_KEY` y `PRENOMINA_API_KEY` son llaves distintas: OpenRouter sirve para el proveedor de modelo del agente; `PRENOMINA_API_KEY` protege el endpoint API. La pantalla web ejecuta el motor deterministico directo para reducir friccion del usuario y conservar la API para automatizaciones.
+
+Cambios ya publicados:
+
+- PR #1: validaciones auditables de prenomina administrativa, fondo de ahorro, UMA, SDI, diferencias contra Excel y `runtime.txt`.
+- PR #2: pantalla web para subir Excel, validar criterios y descargar resultado.
+- PR #3: correccion de enlaces de descarga web con rutas relativas para Railway.
+
+Estado validado:
+
+- `/health` responde correctamente en Railway.
+- `/` muestra la pantalla web.
+- `/web/procesar-prenomina` procesa el Excel sintetico/de muestra y entrega boton de descarga.
+- `/procesar-prenomina` sigue protegido por `X-API-Key` y queda reservado para API/n8n.
+
+Variable recomendada para la pantalla web:
+
+```env
+WEB_ACCESS_KEY=una_clave_para_el_formulario
+```
+
+Si `WEB_ACCESS_KEY` existe, el formulario y la descarga web piden esa clave. Si no existe, la pantalla web queda abierta.
+
 ## Campos leidos del Excel
 
 El motor detecta columnas administrativas como `No.`, `Cod.`, `Empresa`, `Nombre completo`, `Area`, `Departamento`, `Puesto`, `Lugar de trabajo`, `Fecha de ingreso`, `Cuenta con fondo de ahorro`, `Salario diario`, `Factor integracion IMSS`, `Salario diario integrado`, `Sueldo nominal`, `Puntualidad`, `Asistencia`, `Vales de despensa`, `Fondo de ahorro`, `Percepcion sueldos`, `Honorarios asimilados`, `Gasolina sueldo`, `Socio`, `Efectivo`, `Facturado`, `Deuda de carro`, `Sueldo bruto mensual`, `Sueldo bruto quincenal`, `Descuento`, `Sueldo bruto mensual final`, `Sueldo bruto quincenal final` y `Observaciones`.
