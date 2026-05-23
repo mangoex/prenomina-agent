@@ -59,14 +59,34 @@ Para el archivo real del cliente, el sistema detecta columnas como:
 
 Reglas actuales para este formato:
 
-- `percepcion_sueldos = sueldo_nominal + puntualidad + asistencia + vales_despensa + fondo_ahorro`
+- `percepcion_sueldos = sueldo_nominal + puntualidad + asistencia + vales_despensa + fondo_ahorro_para_calculo`
 - `sueldo_bruto_mensual = percepcion_sueldos + honorarios_asimilados + gasolina_sueldo + socio + efectivo + facturado + deuda_carro`
 - `sueldo_bruto_quincenal = sueldo_bruto_mensual / 2`
 - `sueldo_bruto_mensual_final = sueldo_bruto_mensual - descuento`
 - `sueldo_bruto_quincenal_final = sueldo_bruto_mensual_final / 2`
 - Si `OBSERVACIONES` dice `DESCONTAR X DIA`, aplica el descuento de dias sobre la quincena.
+- Valida `salario_diario_integrado = salario_diario * factor_integracion_imss`.
+- Valida Fondo de ahorro contra factor, UMA y tope parametrizables.
 
 Observaciones como prestamos, adeudos, fondo de ahorro, comisiones o pagos por fecha se reportan como advertencias para revision humana.
+
+## Variables de entorno de prenomina administrativa
+
+```env
+FONDO_AHORRO_FACTOR=0.11
+UMA_DIARIA=117.31
+FONDO_AHORRO_TOPE_MODE=mensual
+USE_EXCEL_FONDO_AHORRO=true
+DIAS_BASE_PERIODO=30.4
+```
+
+- `FONDO_AHORRO_FACTOR`: factor usado para validar el fondo de ahorro. Default temporal: `0.11`.
+- `UMA_DIARIA`: UMA diaria usada para calcular el tope de fondo de ahorro. Default temporal: `117.31`; requiere validacion y actualizacion anual.
+- `FONDO_AHORRO_TOPE_MODE`: modo del tope. Acepta `none`, `mensual`, `quincenal` o `proporcional`. Default: `mensual`.
+- `USE_EXCEL_FONDO_AHORRO`: si es `true`, el calculo principal conserva el valor de Excel y solo reporta la diferencia contra el calculo parametrizado. Si es `false`, usa `fondo_ahorro_calc`.
+- `DIAS_BASE_PERIODO`: dias usados para la validacion exploratoria de puntualidad y asistencia contra 10% de SDI. Default: `30.4`.
+
+La formula externa del Excel para fondo de ahorro apunta a un archivo que el sistema no puede leer, por ejemplo `[0.BASE DE DATOS LAFHER NUEVA 2023.xlsx]UMA Y SMG!$F$26`. Por eso el agente muestra explicitamente el factor, UMA, tope, valor de Excel, valor calculado y diferencia. El detalle completo esta en `docs/criterios_prenomina_administrativa.md`.
 
 ## Preparacion local
 
