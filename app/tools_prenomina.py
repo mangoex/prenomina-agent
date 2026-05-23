@@ -604,10 +604,17 @@ def _has_external_reference(formula: Any) -> bool:
     )
 
 
-def _load_admin_prenomina_config(issues: list[dict[str, Any]]) -> dict[str, Any]:
+def _load_admin_prenomina_config(
+    issues: list[dict[str, Any]],
+    overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    overrides = overrides or {}
     use_excel_fondo_ahorro = _env_bool(
         "USE_EXCEL_FONDO_AHORRO", DEFAULT_USE_EXCEL_FONDO_AHORRO
     )
+    if "use_excel_fondo_ahorro" in overrides:
+        use_excel_fondo_ahorro = bool(overrides["use_excel_fondo_ahorro"])
+
     config: dict[str, Any] = {
         "use_excel_fondo_ahorro": use_excel_fondo_ahorro,
         "fondo_ahorro_factor": DEFAULT_FONDO_AHORRO_FACTOR,
@@ -626,6 +633,21 @@ def _load_admin_prenomina_config(issues: list[dict[str, Any]]) -> dict[str, Any]
         ("DIAS_BASE_PERIODO", "dias_base_periodo", DEFAULT_DIAS_BASE_PERIODO),
         ("DIAS_MES", "dias_mes", DEFAULT_DIAS_MES),
     ]:
+        override_key = config_key
+        if override_key in overrides and overrides[override_key] not in (None, ""):
+            try:
+                config[config_key] = float(overrides[override_key])
+            except (TypeError, ValueError):
+                severity = "critico" if not use_excel_fondo_ahorro else "advertencia"
+                _add_issue(
+                    issues,
+                    severity,
+                    "variable_entorno_invalida",
+                    f"{env_name} no es numerica; se usa default {default}.",
+                    columna=env_name,
+                )
+            continue
+
         try:
             config[config_key] = _env_float(env_name, default)
         except ValueError:
@@ -637,6 +659,11 @@ def _load_admin_prenomina_config(issues: list[dict[str, Any]]) -> dict[str, Any]
                 f"{env_name} no es numerica; se usa default {default}.",
                 columna=env_name,
             )
+
+    if "fondo_ahorro_tope_mode" in overrides and overrides["fondo_ahorro_tope_mode"]:
+        config["fondo_ahorro_tope_mode"] = _normalize_text(
+            overrides["fondo_ahorro_tope_mode"]
+        )
 
     if config["fondo_ahorro_factor"] <= 0:
         severity = "critico" if not use_excel_fondo_ahorro else "advertencia"
@@ -681,13 +708,14 @@ def procesar_prenomina_administrativa(
     result_path: Path,
     base_df: pd.DataFrame,
     header_row: int,
+    admin_config_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from openpyxl import load_workbook
 
     issues: list[dict[str, Any]] = []
     differences: list[dict[str, Any]] = []
     mapping = _build_admin_column_map(base_df)
-    config = _load_admin_prenomina_config(issues)
+    config = _load_admin_prenomina_config(issues, admin_config_overrides)
 
     for column in ADMIN_REQUIRED_COLUMNS:
         if column not in mapping:
@@ -1154,7 +1182,11 @@ def procesar_prenomina_administrativa(
     }
 
 
-def procesar_prenomina_excel(input_path: str, output_path: str | None = None) -> dict[str, Any]:
+def procesar_prenomina_excel(
+    input_path: str,
+    output_path: str | None = None,
+    admin_config_overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Calcula la prenomina operativa desde Excel y genera el reporte de salida."""
     excel_path = Path(input_path)
     result_path = Path(output_path) if output_path else DEFAULT_OUTPUT_PATH
@@ -1173,6 +1205,7 @@ def procesar_prenomina_excel(input_path: str, output_path: str | None = None) ->
             result_path=result_path,
             base_df=base_df,
             header_row=header_row,
+            admin_config_overrides=admin_config_overrides,
         )
 
     for column in REQUIRED_CALC_COLUMNS:
