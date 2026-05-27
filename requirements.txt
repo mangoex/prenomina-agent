@@ -6,3 +6,5 @@ openpyxl
 python-dotenv
 python-multipart
 pytest
+pywebview
+pyinstaller
