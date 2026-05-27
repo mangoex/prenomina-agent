@@ -25,7 +25,7 @@ Ese archivo es el instalador que se puede copiar a una computadora Windows.
 GitHub usara una maquina temporal con Windows para:
 
 - Instalar Python 3.12.
-- Instalar dependencias desde `requirements.txt`.
+- Instalar dependencias desde `requirements-desktop.txt`.
 - Correr pruebas.
 - Crear `Prenomina.exe` con PyInstaller.
 - Crear `Prenomina Setup.exe` con Inno Setup.
@@ -138,4 +138,3 @@ Si falla Inno Setup, revisar:
 ```text
 installer/prenomina.iss
 ```
-

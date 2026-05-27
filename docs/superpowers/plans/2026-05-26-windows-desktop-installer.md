@@ -13,7 +13,7 @@
 ## File Structure
 
 - Create `desktop_app.py`: desktop entrypoint that loads `.env`, creates local working folders, starts Uvicorn in a background thread, waits for `/health`, opens pywebview, and shuts down cleanly.
-- Modify `requirements.txt`: add `pywebview` for the desktop window and `pyinstaller` for local/manual packaging.
+- Create `requirements-desktop.txt`: extend the server dependencies with `pywebview` for the desktop window and `pyinstaller` for local/manual packaging.
 - Create `installer/prenomina.iss`: Inno Setup script that installs `Prenomina.exe`, creates desktop/start-menu shortcuts, and creates user-facing documents/output folders.
 - Create `.github/workflows/build-windows.yml`: manual GitHub Actions workflow that builds `Prenomina.exe`, compiles `Prenomina Setup.exe`, and uploads it as an artifact.
 - Create `docs/windows_desktop_build.md`: operator instructions for running the GitHub Action, downloading the artifact, and testing it on Windows.
@@ -23,13 +23,14 @@
 
 **Files:**
 - Create: `desktop_app.py`
-- Modify: `requirements.txt`
+- Create: `requirements-desktop.txt`
 
 - [ ] **Step 1: Add desktop dependencies**
 
-Append these lines to `requirements.txt`:
+Create `requirements-desktop.txt`:
 
 ```text
+-r requirements.txt
 pywebview
 pyinstaller
 ```
@@ -145,7 +146,7 @@ Expected: dependencies install. If the system Python cannot install packages, sk
 - [ ] **Step 5: Commit**
 
 ```bash
-git add desktop_app.py requirements.txt
+git add desktop_app.py requirements-desktop.txt
 git commit -m "feat: add desktop app entrypoint"
 ```
 
@@ -258,7 +259,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-desktop.txt
 
       - name: Run tests
         shell: pwsh
