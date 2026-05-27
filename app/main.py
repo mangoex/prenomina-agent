@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 from html import escape
@@ -50,6 +52,10 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def _ai_analysis_enabled() -> bool:
     return _env_bool("ENABLE_AI_ANALYSIS")
+
+
+def _desktop_mode_enabled() -> bool:
+    return _env_bool("PRENOMINA_DESKTOP")
 
 
 def _require_web_access(access_key: str | None) -> None:
@@ -117,19 +123,37 @@ def _render_web_page(
     elif result:
         total = result.get("total_prenomina")
         total_text = "Pendiente" if total is None else f"${float(total):,.2f}"
-        download_button = (
-            f'<a class="button primary" href="{escape(download_url or "")}">Descargar Excel</a>'
-            if download_url
-            else ""
-        )
+        action_buttons = []
+        if download_url:
+            action_buttons.append(
+                f'<a class="button primary" href="{escape(download_url)}" download>Descargar Excel</a>'
+            )
+
+        generated_path = result.get("archivo_generado")
+        saved_file_text = ""
+        if generated_path:
+            saved_file_text = f"""
+              <p class="saved-file">Archivo guardado en:<br><code>{escape(str(generated_path))}</code></p>
+            """
+            if _desktop_mode_enabled():
+                open_output_url = "/web/abrir-output"
+                access_key = values.get("access_key")
+                if _web_access_enabled() and access_key:
+                    open_output_url = f"{open_output_url}?{urlencode({'access_key': access_key})}"
+                action_buttons.append(
+                    f'<a class="button secondary" href="{escape(open_output_url)}">Abrir carpeta</a>'
+                )
+
+        action_button_html = "".join(action_buttons)
         result_panel = f"""
         <section class="result">
           <div class="result-head">
             <div>
               <h2>{escape(str(result.get("mensaje", "Prenomina procesada.")))}</h2>
               <p>Revisa advertencias antes de usar el archivo como calculo final.</p>
+              {saved_file_text}
             </div>
-            {download_button}
+            <div class="actions">{action_button_html}</div>
           </div>
           <div class="metrics" aria-label="Resumen del procesamiento">
             <div><span>Empleados</span><strong>{int(result.get("empleados_procesados") or 0)}</strong></div>
@@ -348,6 +372,14 @@ def _render_web_page(
         .primary:hover {{
           background: var(--accent-strong);
         }}
+        .secondary {{
+          color: var(--accent-strong);
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+        }}
+        .secondary:hover {{
+          background: #dde8f0;
+        }}
         .result {{
           margin-top: 28px;
           padding: 22px;
@@ -365,6 +397,12 @@ def _render_web_page(
           align-items: flex-start;
           margin-bottom: 18px;
         }}
+        .actions {{
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          justify-content: flex-end;
+        }}
         h2 {{
           font-size: 22px;
           line-height: 1.2;
@@ -374,6 +412,17 @@ def _render_web_page(
         .result p {{
           margin: 0;
           color: var(--muted);
+        }}
+        .saved-file {{
+          margin-top: 10px !important;
+          font-size: 13px;
+        }}
+        .saved-file code {{
+          display: inline-block;
+          max-width: min(560px, 100%);
+          margin-top: 4px;
+          color: #334058;
+          word-break: break-all;
         }}
         .metrics {{
           display: grid;
@@ -451,7 +500,7 @@ def _render_web_page(
           .intro {{ grid-template-columns: 1fr; }}
           h1 {{ font-size: 32px; }}
           .grid, .metrics, .analysis-grid {{ grid-template-columns: 1fr; }}
-          .result-head {{ flex-direction: column; }}
+          .result-head, .actions {{ flex-direction: column; }}
           .button {{ width: 100%; }}
         }}
       </style>
@@ -563,6 +612,16 @@ def _render_ai_analysis(result: dict) -> str:
     """
 
 
+def _open_folder(path: Path) -> None:
+    if sys.platform.startswith("win"):
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+        return
+    subprocess.Popen(["xdg-open", str(path)])
+
+
 def require_api_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
     expected = os.getenv("PRENOMINA_API_KEY")
     if expected and x_api_key != expected:
@@ -604,6 +663,7 @@ async def web_procesar_prenomina(
     _require_web_access(access_key)
     filename = file.filename or ""
     form_values = {
+        "access_key": access_key,
         "fondo_ahorro_factor": fondo_ahorro_factor,
         "uma_diaria": uma_diaria,
         "fondo_ahorro_tope_mode": fondo_ahorro_tope_mode,
@@ -682,6 +742,69 @@ def web_descargar_resultado(
         file_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=safe_name,
+    )
+
+
+@app.get("/web/abrir-output", response_class=HTMLResponse)
+def web_abrir_output(access_key: str | None = Query(default=None)) -> HTMLResponse:
+    if not _desktop_mode_enabled():
+        raise HTTPException(status_code=404, detail="Disponible solo en la app de escritorio.")
+
+    _require_web_access(access_key)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        _open_folder(OUTPUT_DIR)
+    except Exception as exc:
+        return _render_web_page(error=f"No se pudo abrir la carpeta de salida: {exc}")
+
+    return HTMLResponse(
+        f"""
+        <!doctype html>
+        <html lang="es">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Carpeta abierta</title>
+          <style>
+            body {{
+              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+              margin: 0;
+              background: #f5f7fb;
+              color: #172033;
+            }}
+            main {{
+              width: min(760px, calc(100% - 32px));
+              margin: 64px auto;
+              background: white;
+              border: 1px solid #d8e0ea;
+              border-radius: 8px;
+              padding: 24px;
+            }}
+            p {{
+              color: #647087;
+              line-height: 1.55;
+            }}
+            code {{
+              color: #334058;
+              word-break: break-all;
+            }}
+            a {{
+              color: #0d504d;
+              font-weight: 700;
+            }}
+          </style>
+        </head>
+        <body>
+          <main>
+            <h1>Carpeta abierta</h1>
+            <p>Busca el Excel generado en:</p>
+            <p><code>{escape(str(OUTPUT_DIR))}</code></p>
+            <p><a href="/">Volver al generador</a></p>
+          </main>
+        </body>
+        </html>
+        """
     )
 
 

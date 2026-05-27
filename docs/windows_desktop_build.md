@@ -72,6 +72,8 @@ C:\Users\<usuario>\Documents\Prenomina
 - Subir `samples\asistencia_ejemplo.xlsx` si se tiene una copia del repo o un Excel real de prueba.
 - Confirmar que aparece resultado.
 - Descargar el Excel generado.
+- En app de escritorio, si la descarga no abre una ventana del navegador, usar `Abrir carpeta`.
+- El Excel generado queda en `C:\Users\<usuario>\Documents\Prenomina\output`.
 - Cerrar la app.
 - Volver a abrir la app y confirmar que inicia de nuevo.
 

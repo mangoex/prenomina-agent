@@ -37,6 +37,7 @@ def prepare_environment() -> Path:
     data_dir = user_data_dir()
     (data_dir / "input").mkdir(parents=True, exist_ok=True)
     (data_dir / "output").mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("PRENOMINA_DESKTOP", "true")
 
     packaged_env = app_base_dir() / ".env"
     user_env = data_dir / ".env"
