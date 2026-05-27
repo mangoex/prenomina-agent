@@ -19,8 +19,9 @@ from app.tools_prenomina import procesar_prenomina_excel
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 
-INPUT_DIR = PROJECT_ROOT / "input"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+DATA_DIR = Path(os.getenv("PRENOMINA_DATA_DIR", str(PROJECT_ROOT))).expanduser()
+INPUT_DIR = DATA_DIR / "input"
+OUTPUT_DIR = DATA_DIR / "output"
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "25"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
