@@ -5,6 +5,7 @@ import socket
 import sys
 import threading
 import time
+import traceback
 import urllib.request
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from dotenv import load_dotenv
 
 APP_NAME = "Prenomina"
 HOST = "127.0.0.1"
+STARTUP_TIMEOUT_SECONDS = float(os.getenv("PRENOMINA_STARTUP_TIMEOUT_SECONDS", "90"))
 
 
 def app_base_dir() -> Path:
@@ -53,11 +55,18 @@ def find_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def wait_for_health(port: int, timeout_seconds: float = 25.0) -> None:
+def wait_for_health(
+    port: int,
+    server_holder: dict[str, object],
+    timeout_seconds: float = STARTUP_TIMEOUT_SECONDS,
+) -> None:
     deadline = time.monotonic() + timeout_seconds
     url = f"http://{HOST}:{port}/health"
     last_error: Exception | None = None
     while time.monotonic() < deadline:
+        startup_error = server_holder.get("startup_error")
+        if startup_error:
+            raise RuntimeError(f"No se pudo iniciar {APP_NAME}.\n\n{startup_error}")
         try:
             with urllib.request.urlopen(url, timeout=1.0) as response:
                 if response.status == 200:
@@ -68,32 +77,35 @@ def wait_for_health(port: int, timeout_seconds: float = 25.0) -> None:
     raise RuntimeError(f"No se pudo iniciar {APP_NAME}. Ultimo error: {last_error}")
 
 
-def run_server(port: int, server_holder: dict[str, uvicorn.Server]) -> None:
-    from app.main import app
+def run_server(port: int, server_holder: dict[str, object]) -> None:
+    try:
+        from app.main import app
 
-    config = uvicorn.Config(
-        app,
-        host=HOST,
-        port=port,
-        log_level="warning",
-        reload=False,
-    )
-    server = uvicorn.Server(config)
-    server_holder["server"] = server
-    server.run()
+        config = uvicorn.Config(
+            app,
+            host=HOST,
+            port=port,
+            log_level="warning",
+            reload=False,
+        )
+        server = uvicorn.Server(config)
+        server_holder["server"] = server
+        server.run()
+    except Exception:
+        server_holder["startup_error"] = traceback.format_exc()
 
 
 def main() -> None:
     prepare_environment()
     port = find_free_port()
-    server_holder: dict[str, uvicorn.Server] = {}
+    server_holder: dict[str, object] = {}
     server_thread = threading.Thread(
         target=run_server,
         args=(port, server_holder),
         daemon=True,
     )
     server_thread.start()
-    wait_for_health(port)
+    wait_for_health(port, server_holder)
 
     window = webview.create_window(
         APP_NAME,
@@ -105,7 +117,7 @@ def main() -> None:
 
     def stop_server() -> None:
         server = server_holder.get("server")
-        if server is not None:
+        if isinstance(server, uvicorn.Server):
             server.should_exit = True
 
     window.events.closed += stop_server

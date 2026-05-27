@@ -89,6 +89,18 @@ Si se necesita configurar variables, copiar esa plantilla como:
 C:\Users\<usuario>\Documents\Prenomina\.env
 ```
 
+En Windows se puede hacer desde el Explorador de archivos:
+
+1. Abrir `Documentos`.
+2. Entrar a la carpeta `Prenomina`.
+3. Copiar `.env.example`.
+4. Pegar la copia en la misma carpeta.
+5. Cambiar el nombre de la copia a `.env`.
+6. Abrir `.env` con Bloc de notas.
+7. Guardar el archivo y volver a abrir la aplicacion.
+
+Importante: el archivo debe llamarse exactamente `.env`, no `.env.txt`.
+
 Variables comunes:
 
 ```env
@@ -103,7 +115,7 @@ DIAS_BASE_PERIODO=30.4
 
 Para uso normal de escritorio, no se necesita Railway.
 
-Para usar el endpoint API con agente/modelo externo, si algun dia se ocupa, tambien se configuran:
+Para que funcione como agente IA con analisis, comparaciones y sugerencias, configurar:
 
 ```env
 MODEL_PROVIDER=openrouter
