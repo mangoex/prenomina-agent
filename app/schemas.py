@@ -21,3 +21,5 @@ class ProcesarPrenominaResponse(BaseModel):
     empleados_procesados: int = 0
     total_prenomina: float | None = None
     inconsistencias: list[dict[str, Any]] = Field(default_factory=list)
+    analisis_agente: dict[str, Any] | None = None
+    analisis_agente_error: str | None = None

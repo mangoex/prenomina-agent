@@ -11,7 +11,7 @@ from fastapi import Depends, File, Form, Header, HTTPException, Query, Request, 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 
-from app.agent import ejecutar_agente_prenomina
+from app.agent import ejecutar_agente_prenomina, ejecutar_analisis_prenomina
 from app.schemas import ProcesarPrenominaResponse
 from app.tools_prenomina import procesar_prenomina_excel
 
@@ -39,6 +39,17 @@ def health() -> dict[str, str]:
 
 def _web_access_enabled() -> bool:
     return bool(os.getenv("WEB_ACCESS_KEY"))
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "si", "sí"}
+
+
+def _ai_analysis_enabled() -> bool:
+    return _env_bool("ENABLE_AI_ANALYSIS")
 
 
 def _require_web_access(access_key: str | None) -> None:
@@ -133,6 +144,7 @@ def _render_web_page(
             </table>
           </div>
         </section>
+        {_render_ai_analysis(result)}
         """
 
     html = f"""
@@ -407,12 +419,38 @@ def _render_web_page(
         tr:last-child td {{
           border-bottom: 0;
         }}
+        .analysis-grid {{
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+          margin-top: 16px;
+        }}
+        .analysis-grid div {{
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          background: #fbfcfe;
+          padding: 14px;
+        }}
+        h3 {{
+          font-size: 15px;
+          margin: 0 0 8px;
+          color: #334058;
+        }}
+        ul {{
+          margin: 0;
+          padding-left: 19px;
+          color: var(--muted);
+          line-height: 1.45;
+        }}
+        li + li {{
+          margin-top: 5px;
+        }}
         @media (max-width: 820px) {{
           main {{ width: min(100% - 20px, 680px); padding-top: 18px; }}
           header {{ align-items: flex-start; flex-direction: column; gap: 8px; }}
           .intro {{ grid-template-columns: 1fr; }}
           h1 {{ font-size: 32px; }}
-          .grid, .metrics {{ grid-template-columns: 1fr; }}
+          .grid, .metrics, .analysis-grid {{ grid-template-columns: 1fr; }}
           .result-head {{ flex-direction: column; }}
           .button {{ width: 100%; }}
         }}
@@ -476,6 +514,53 @@ def _render_web_page(
     </html>
     """
     return HTMLResponse(html)
+
+
+def _render_list(items: list | None) -> str:
+    clean_items = [str(item) for item in (items or []) if str(item).strip()]
+    if not clean_items:
+        return "<li>Sin elementos para mostrar.</li>"
+    return "".join(f"<li>{escape(item)}</li>" for item in clean_items[:8])
+
+
+def _render_ai_analysis(result: dict) -> str:
+    analysis = result.get("analisis_agente")
+    analysis_error = result.get("analisis_agente_error")
+    if not analysis and not analysis_error:
+        return ""
+
+    if analysis_error:
+        return f"""
+        <section class="result error">
+          <h2>Análisis del agente no disponible</h2>
+          <p>{escape(str(analysis_error))}</p>
+        </section>
+        """
+
+    return f"""
+    <section class="result ai-analysis">
+      <h2>Análisis del agente</h2>
+      <p>{escape(str(analysis.get("resumen_ejecutivo", "")))}</p>
+      <div class="analysis-grid">
+        <div>
+          <h3>Diferencias relevantes</h3>
+          <ul>{_render_list(analysis.get("diferencias_relevantes"))}</ul>
+        </div>
+        <div>
+          <h3>Riesgos o alertas</h3>
+          <ul>{_render_list(analysis.get("riesgos_alertas"))}</ul>
+        </div>
+        <div>
+          <h3>Sugerencias</h3>
+          <ul>{_render_list(analysis.get("sugerencias"))}</ul>
+        </div>
+        <div>
+          <h3>Puntos a validar</h3>
+          <ul>{_render_list(analysis.get("puntos_validar"))}</ul>
+        </div>
+      </div>
+    </section>
+    """
 
 
 def require_api_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
@@ -558,6 +643,11 @@ async def web_procesar_prenomina(
             download_url = f"/web/descargar/{generated_name}"
             if _web_access_enabled():
                 download_url = f"{download_url}?{urlencode({'access_key': access_key})}"
+        if _ai_analysis_enabled():
+            try:
+                resultado["analisis_agente"] = await ejecutar_analisis_prenomina(resultado)
+            except Exception as exc:
+                resultado["analisis_agente_error"] = str(exc)
         return _render_web_page(
             result=resultado,
             download_url=download_url,
@@ -626,6 +716,13 @@ async def procesar_prenomina(request: Request, file: UploadFile = File(...)) -> 
             if generated_name
             else None
         )
+        analisis_agente = None
+        analisis_agente_error = None
+        if _ai_analysis_enabled():
+            try:
+                analisis_agente = await ejecutar_analisis_prenomina(resultado)
+            except Exception as exc:
+                analisis_agente_error = str(exc)
         return {
             "ok": bool(resultado.get("ok", False)),
             "mensaje": resultado.get("mensaje", ""),
@@ -634,6 +731,8 @@ async def procesar_prenomina(request: Request, file: UploadFile = File(...)) -> 
             "empleados_procesados": int(resultado.get("empleados_procesados") or 0),
             "total_prenomina": resultado.get("total_prenomina"),
             "inconsistencias": resultado.get("inconsistencias") or [],
+            "analisis_agente": analisis_agente,
+            "analisis_agente_error": analisis_agente_error,
         }
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

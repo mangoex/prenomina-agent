@@ -35,6 +35,22 @@ Tu responsabilidad:
 """.strip()
 
 
+ANALYSIS_INSTRUCTIONS = """
+Eres el analista IA del Agente de Prenomina.
+
+Tu responsabilidad:
+- Analizar el resultado producido por el motor Python de prenomina.
+- No recalcular importes ni contradecir los importes del motor Python.
+- No inventar reglas de negocio, empleados, columnas ni cifras.
+- Explicar diferencias, riesgos y puntos que requieren validacion humana.
+- Separar claramente sugerencias operativas de reglas matematicas ya calculadas.
+- Responder solo JSON valido con estas llaves:
+  resumen_ejecutivo, diferencias_relevantes, riesgos_alertas, sugerencias, puntos_validar.
+
+Cada lista debe contener textos breves, concretos y accionables.
+""".strip()
+
+
 def _get_model_provider() -> str:
     return os.getenv("MODEL_PROVIDER", "openai").strip().lower()
 
@@ -106,6 +122,24 @@ def _build_agent(provider: str):
     return Agent(**kwargs)
 
 
+def _build_analysis_agent(provider: str):
+    if Agent is None:
+        raise RuntimeError(
+            "OpenAI Agents SDK no esta instalado. Ejecuta: pip install -r requirements.txt"
+        )
+
+    kwargs: dict[str, Any] = {
+        "name": "Analista de Prenomina",
+        "instructions": ANALYSIS_INSTRUCTIONS,
+    }
+
+    model = _get_model_name(provider)
+    if model:
+        kwargs["model"] = model
+
+    return Agent(**kwargs)
+
+
 def _coerce_agent_output(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
@@ -144,6 +178,61 @@ def _coerce_agent_output(value: Any) -> dict[str, Any]:
     }
 
 
+def _coerce_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    return [str(value)]
+
+
+def _coerce_analysis_output(value: Any) -> dict[str, Any]:
+    parsed: dict[str, Any] | None = None
+    if isinstance(value, dict):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            candidate = json.loads(value)
+            if isinstance(candidate, dict):
+                parsed = candidate
+        except json.JSONDecodeError:
+            parsed = None
+
+        if parsed is None:
+            try:
+                candidate = ast.literal_eval(value)
+                if isinstance(candidate, dict):
+                    parsed = candidate
+            except (SyntaxError, ValueError):
+                parsed = None
+
+        if parsed is None:
+            parsed = {"resumen_ejecutivo": value}
+
+    if parsed is None:
+        parsed = {"resumen_ejecutivo": "El agente devolvio un analisis no estructurado."}
+
+    return {
+        "resumen_ejecutivo": str(parsed.get("resumen_ejecutivo") or ""),
+        "diferencias_relevantes": _coerce_string_list(parsed.get("diferencias_relevantes")),
+        "riesgos_alertas": _coerce_string_list(parsed.get("riesgos_alertas")),
+        "sugerencias": _coerce_string_list(parsed.get("sugerencias")),
+        "puntos_validar": _coerce_string_list(parsed.get("puntos_validar")),
+    }
+
+
+def _analysis_payload(resultado: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ok": resultado.get("ok"),
+        "mensaje": resultado.get("mensaje"),
+        "empleados_procesados": resultado.get("empleados_procesados"),
+        "total_prenomina": resultado.get("total_prenomina"),
+        "inconsistencias": (resultado.get("inconsistencias") or [])[:40],
+    }
+
+
 async def ejecutar_agente_prenomina(input_path: str, output_path: str) -> dict[str, Any]:
     if Runner is None:
         raise RuntimeError(
@@ -164,3 +253,24 @@ async def ejecutar_agente_prenomina(input_path: str, output_path: str) -> dict[s
     )
     result = await Runner.run(agent, prompt, max_turns=3, run_config=run_config)
     return _coerce_agent_output(result.final_output)
+
+
+async def ejecutar_analisis_prenomina(resultado: dict[str, Any]) -> dict[str, Any]:
+    if Runner is None:
+        raise RuntimeError(
+            "OpenAI Agents SDK no esta instalado. Ejecuta: pip install -r requirements.txt"
+        )
+
+    load_dotenv(PROJECT_ROOT / ".env", override=True)
+    provider = _get_model_provider()
+    _validate_provider_config(provider)
+
+    agent = _build_analysis_agent(provider)
+    run_config = _build_run_config(provider)
+    prompt = (
+        "Analiza este resultado de prenomina ya calculado por Python.\n"
+        "No recalcules importes. No cambies cifras. Devuelve JSON valido con las llaves solicitadas.\n"
+        f"resultado_json: {json.dumps(_analysis_payload(resultado), ensure_ascii=False)}"
+    )
+    result = await Runner.run(agent, prompt, max_turns=2, run_config=run_config)
+    return _coerce_analysis_output(result.final_output)

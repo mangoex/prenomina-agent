@@ -93,6 +93,7 @@ Variables comunes:
 
 ```env
 MAX_UPLOAD_MB=25
+ENABLE_AI_ANALYSIS=false
 FONDO_AHORRO_FACTOR=0.11
 UMA_DIARIA=117.31
 FONDO_AHORRO_TOPE_MODE=mensual
@@ -109,6 +110,7 @@ MODEL_PROVIDER=openrouter
 OPENROUTER_API_KEY=tu_clave_openrouter
 OPENROUTER_MODEL=openrouter/openai/gpt-4o-mini
 PRENOMINA_API_KEY=una_clave_larga_para_la_api
+ENABLE_AI_ANALYSIS=true
 ```
 
 ## Notas tecnicas
@@ -116,6 +118,7 @@ PRENOMINA_API_KEY=una_clave_larga_para_la_api
 - La app corre localmente en `127.0.0.1` usando un puerto libre automatico.
 - La ventana de escritorio carga la app local con `pywebview`.
 - El calculo normal usa `app/tools_prenomina.py`.
+- Si `ENABLE_AI_ANALYSIS=true`, la app agrega una capa de analisis IA despues del calculo.
 - Railway no participa en la ejecucion local.
 - GitHub solo se usa para construir y descargar el instalador.
 

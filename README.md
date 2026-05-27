@@ -78,6 +78,7 @@ UMA_DIARIA=117.31
 FONDO_AHORRO_TOPE_MODE=mensual
 USE_EXCEL_FONDO_AHORRO=true
 DIAS_BASE_PERIODO=30.4
+ENABLE_AI_ANALYSIS=false
 ```
 
 - `FONDO_AHORRO_FACTOR`: factor usado para validar el fondo de ahorro. Default temporal: `0.11`.
@@ -85,6 +86,7 @@ DIAS_BASE_PERIODO=30.4
 - `FONDO_AHORRO_TOPE_MODE`: modo del tope. Acepta `none`, `mensual`, `quincenal` o `proporcional`. Default: `mensual`.
 - `USE_EXCEL_FONDO_AHORRO`: si es `true`, el calculo principal conserva el valor de Excel y solo reporta la diferencia contra el calculo parametrizado. Si es `false`, usa `fondo_ahorro_calc`.
 - `DIAS_BASE_PERIODO`: dias usados para la validacion exploratoria de puntualidad y asistencia contra 10% de SDI. Default: `30.4`.
+- `ENABLE_AI_ANALYSIS`: si es `true`, agrega un analisis IA posterior al calculo Python con diferencias, riesgos, sugerencias y puntos a validar. Requiere proveedor de modelo configurado.
 
 La formula externa del Excel para fondo de ahorro apunta a un archivo que el sistema no puede leer, por ejemplo `[0.BASE DE DATOS LAFHER NUEVA 2023.xlsx]UMA Y SMG!$F$26`. Por eso el agente muestra explicitamente el factor, UMA, tope, valor de Excel, valor calculado y diferencia. El detalle completo esta en `docs/criterios_prenomina_administrativa.md`.
 
@@ -134,7 +136,7 @@ La ruta `/` abre una pantalla web simple para usuarios no tecnicos:
 - Revisar resumen y advertencias.
 - Descargar el Excel generado.
 
-La pantalla web ejecuta el motor deterministico directamente para evitar que el usuario tenga que manejar llaves o headers. El endpoint `/procesar-prenomina` se mantiene separado para integraciones y sigue usando OpenAI Agents SDK con el proveedor configurado, incluyendo OpenRouter.
+La pantalla web ejecuta primero el motor deterministico para evitar que el modelo invente importes o modifique reglas de negocio. Si `ENABLE_AI_ANALYSIS=true` y el proveedor de modelo esta configurado, despues del calculo agrega una seccion de analisis del agente con diferencias, riesgos, sugerencias y puntos a validar. El endpoint `/procesar-prenomina` se mantiene separado para integraciones y sigue usando OpenAI Agents SDK con el proveedor configurado, incluyendo OpenRouter.
 
 La pantalla web no requiere que el usuario capture `X-API-Key`. Para protegerla en Railway, configura:
 
@@ -192,6 +194,7 @@ curl -L "https://tu-app.railway.app/descargar/prenomina_resultado_<id>.xlsx" ^
 4. Configura tambien:
    - `PRENOMINA_API_KEY`: llave privada para proteger la API.
    - `WEB_ACCESS_KEY`: llave opcional para proteger la pantalla web.
+   - `ENABLE_AI_ANALYSIS`: `true` para activar analisis IA posterior al calculo.
    - `MAX_UPLOAD_MB`: limite maximo de archivo, por ejemplo `25`.
 5. Railway usara el `Procfile`:
 

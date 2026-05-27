@@ -10,7 +10,7 @@ URL Railway actual: `https://web-production-7b4d.up.railway.app/`.
 
 Decision principal: el agente debe servir dos modos de uso. El modo API se mantiene para n8n/integraciones con `POST /procesar-prenomina` protegido por `X-API-Key`. El modo usuario final vive en `/` y permite subir el Excel, validar UMA/factor/modo de tope, generar la prenomina y descargar el resultado sin que un usuario no tecnico tenga que manejar headers o comandos.
 
-Proveedor de modelo: el proyecto usa OpenRouter en produccion, no OpenAI directo. `OPENROUTER_API_KEY` y `PRENOMINA_API_KEY` son llaves distintas: OpenRouter sirve para el proveedor de modelo del agente; `PRENOMINA_API_KEY` protege el endpoint API. La pantalla web ejecuta el motor deterministico directo para reducir friccion del usuario y conservar la API para automatizaciones.
+Proveedor de modelo: el proyecto usa OpenRouter en produccion, no OpenAI directo. `OPENROUTER_API_KEY` y `PRENOMINA_API_KEY` son llaves distintas: OpenRouter sirve para el proveedor de modelo del agente; `PRENOMINA_API_KEY` protege el endpoint API. La pantalla web ejecuta primero el motor deterministico para reducir friccion del usuario y conservar la API para automatizaciones; si `ENABLE_AI_ANALYSIS=true`, agrega despues una capa de analisis IA sin permitir que el modelo recalcule importes.
 
 Cambios ya publicados:
 
