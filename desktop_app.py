@@ -107,6 +107,13 @@ def main() -> None:
     server_thread.start()
     wait_for_health(port, server_holder)
 
+    if "--smoke-test" in sys.argv:
+        server = server_holder.get("server")
+        if isinstance(server, uvicorn.Server):
+            server.should_exit = True
+        server_thread.join(timeout=5)
+        return
+
     window = webview.create_window(
         APP_NAME,
         f"http://{HOST}:{port}",

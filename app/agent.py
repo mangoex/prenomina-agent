@@ -10,9 +10,12 @@ from dotenv import load_dotenv
 
 from app.tools_prenomina import calcular_prenomina_excel
 
+_AGENTS_IMPORT_ERROR: Exception | None = None
+
 try:
     from agents import Agent, ModelSettings, RunConfig, Runner
-except ImportError:
+except Exception as exc:
+    _AGENTS_IMPORT_ERROR = exc
     Agent = None  # type: ignore[assignment]
     ModelSettings = None  # type: ignore[assignment]
     RunConfig = None  # type: ignore[assignment]
@@ -81,8 +84,10 @@ def _validate_provider_config(provider: str) -> None:
 
 def _build_run_config(provider: str):
     if RunConfig is None:
+        detail = f" Detalle: {_AGENTS_IMPORT_ERROR}" if _AGENTS_IMPORT_ERROR else ""
         raise RuntimeError(
-            "OpenAI Agents SDK no esta instalado. Ejecuta: pip install -r requirements.txt"
+            "OpenAI Agents SDK no esta disponible. Ejecuta: pip install -r requirements.txt"
+            f"{detail}"
         )
 
     if provider == "openrouter":
@@ -103,8 +108,10 @@ def _build_run_config(provider: str):
 
 def _build_agent(provider: str):
     if Agent is None or ModelSettings is None:
+        detail = f" Detalle: {_AGENTS_IMPORT_ERROR}" if _AGENTS_IMPORT_ERROR else ""
         raise RuntimeError(
-            "OpenAI Agents SDK no esta instalado. Ejecuta: pip install -r requirements.txt"
+            "OpenAI Agents SDK no esta disponible. Ejecuta: pip install -r requirements.txt"
+            f"{detail}"
         )
 
     kwargs: dict[str, Any] = {
@@ -124,8 +131,10 @@ def _build_agent(provider: str):
 
 def _build_analysis_agent(provider: str):
     if Agent is None:
+        detail = f" Detalle: {_AGENTS_IMPORT_ERROR}" if _AGENTS_IMPORT_ERROR else ""
         raise RuntimeError(
-            "OpenAI Agents SDK no esta instalado. Ejecuta: pip install -r requirements.txt"
+            "OpenAI Agents SDK no esta disponible. Ejecuta: pip install -r requirements.txt"
+            f"{detail}"
         )
 
     kwargs: dict[str, Any] = {
@@ -235,8 +244,10 @@ def _analysis_payload(resultado: dict[str, Any]) -> dict[str, Any]:
 
 async def ejecutar_agente_prenomina(input_path: str, output_path: str) -> dict[str, Any]:
     if Runner is None:
+        detail = f" Detalle: {_AGENTS_IMPORT_ERROR}" if _AGENTS_IMPORT_ERROR else ""
         raise RuntimeError(
-            "OpenAI Agents SDK no esta instalado. Ejecuta: pip install -r requirements.txt"
+            "OpenAI Agents SDK no esta disponible. Ejecuta: pip install -r requirements.txt"
+            f"{detail}"
         )
 
     load_dotenv(PROJECT_ROOT / ".env", override=True)
@@ -257,8 +268,10 @@ async def ejecutar_agente_prenomina(input_path: str, output_path: str) -> dict[s
 
 async def ejecutar_analisis_prenomina(resultado: dict[str, Any]) -> dict[str, Any]:
     if Runner is None:
+        detail = f" Detalle: {_AGENTS_IMPORT_ERROR}" if _AGENTS_IMPORT_ERROR else ""
         raise RuntimeError(
-            "OpenAI Agents SDK no esta instalado. Ejecuta: pip install -r requirements.txt"
+            "OpenAI Agents SDK no esta disponible. Ejecuta: pip install -r requirements.txt"
+            f"{detail}"
         )
 
     load_dotenv(PROJECT_ROOT / ".env", override=True)

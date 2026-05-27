@@ -32,7 +32,14 @@ jobs:
       - name: Build desktop executable
         shell: pwsh
         run: |
-          pyinstaller --name Prenomina --onefile --windowed --collect-all webview --collect-all openpyxl --hidden-import=webview.platforms.edgechromium desktop_app.py
+          pyinstaller --name Prenomina --onefile --windowed --collect-all webview --collect-all openpyxl --collect-all agents --collect-all litellm --collect-all openai --hidden-import=webview.platforms.edgechromium desktop_app.py
+
+      - name: Smoke test desktop executable
+        shell: pwsh
+        env:
+          PRENOMINA_STARTUP_TIMEOUT_SECONDS: "120"
+        run: |
+          .\dist\Prenomina.exe --smoke-test
 
       - name: Install Inno Setup
         shell: pwsh

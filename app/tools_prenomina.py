@@ -13,7 +13,7 @@ from openpyxl.utils import get_column_letter
 
 try:
     from agents import function_tool
-except ImportError:  # Allows deterministic local tests before installing openai-agents.
+except Exception:  # Allows deterministic local/desktop runs if the Agents SDK is unavailable.
     def function_tool(func=None, **_kwargs):  # type: ignore[no-redef]
         if func is None:
             return lambda wrapped: wrapped
